@@ -72,9 +72,66 @@ export default function App() {
 
 O `device_id` é gerado automaticamente (UUID v4) e persistido em AsyncStorage.
 
+## Vídeo (opcional)
+
+O SDK renderiza vídeos via [`expo-video`](https://docs.expo.dev/versions/latest/sdk/video/). É um **peerDep opcional** — instala se a tua app for receber anúncios de vídeo:
+
+```bash
+npx expo install expo-video
+```
+
+Se não instalares, vídeos caem em fallback gracioso (mostra o thumbnail estático). Os anúncios de imagem continuam a funcionar sem `expo-video`.
+
+Quando instalado, o vídeo:
+- Prefere `hls_url` (HLS adaptive) > `url` (MP4 progressive).
+- Autoplay, muted, loop, sem controles.
+- Thumbnail como poster antes de carregar.
+- Impressão conta após 2s visível (vs 1s para imagem — alinha com IAB MRC).
+
+## Uso em listas — `<AdSlot>`
+
+**Recomendado para qualquer FlatList/ScrollView.** Faz lazy mount (só chama `/serve` quando entra no viewport), reserva altura para evitar layout shift e colapsa a 0px quando não há anúncio.
+
+```tsx
+import { AdSlot } from '@hongayetu/internal-ads-react-native';
+
+function ProductList({ produtos }) {
+  // Interpola um AdSlot a cada 6 produtos.
+  const items = interpolarComAds(produtos, 6);
+
+  return (
+    <FlatList
+      data={items}
+      keyExtractor={(item, idx) => item.tipo === 'ad' ? `ad-${idx}` : item.id}
+      renderItem={({ item }) =>
+        item.tipo === 'ad' ? (
+          <AdSlot
+            espacoId={1}
+            origem="humbi_shop"
+            sublocal="lista_produtos"
+            reservedHeight={180}
+          />
+        ) : (
+          <ProductCard produto={item} />
+        )
+      }
+    />
+  );
+}
+
+function interpolarComAds<T>(items: T[], intervalo: number): Array<T | { tipo: 'ad' }> {
+  const out: Array<T | { tipo: 'ad' }> = [];
+  items.forEach((it, i) => {
+    out.push(it);
+    if ((i + 1) % intervalo === 0) out.push({ tipo: 'ad' });
+  });
+  return out;
+}
+```
+
 ## Uso simples — `<AdView>`
 
-Componente auto-tracking que trata de tudo (load → render → impressão após 1s → clique → redirect):
+Componente auto-tracking que trata de tudo (load → render → impressão → clique → redirect). **Para listas usa `<AdSlot>`**; para um anúncio fixo (ex: banner numa screen estática), `<AdView>` chega:
 
 ```tsx
 import { AdView } from '@hongayetu/internal-ads-react-native';

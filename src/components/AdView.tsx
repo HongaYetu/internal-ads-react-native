@@ -11,12 +11,23 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useAd } from '../hooks/useAd';
-import type { AdServeRequest, Anuncio } from '../types';
+import type { AdAsset, AdServeRequest, Anuncio } from '../types';
+
+// Lazy import de expo-video — se a app não tiver instalado, fallback automático
+// para thumbnail (imagem estática).
+let lazyVideoView: any = null;
+let lazyUseVideoPlayer: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const mod = require('expo-video');
+  lazyVideoView = mod.VideoView ?? null;
+  lazyUseVideoPlayer = mod.useVideoPlayer ?? null;
+} catch {
+  // expo-video não instalado — vídeos renderizam só com thumbnail.
+}
 
 export type AdViewProps = AdServeRequest & {
-  /** Estilo do container exterior. */
   style?: StyleProp<ViewStyle>;
-  /** Estilo da imagem/vídeo. */
   mediaStyle?: StyleProp<ViewStyle>;
   /** Render custom (override total). */
   renderAd?: (anuncio: Anuncio) => React.ReactNode;
@@ -24,21 +35,14 @@ export type AdViewProps = AdServeRequest & {
   renderEmpty?: () => React.ReactNode;
   /** Render durante o carregamento. */
   renderLoading?: () => React.ReactNode;
-  /** Quantos ms o anúncio precisa ficar "montado" antes da impressão contar.
-   *  Default: 1000ms (alinha com o padrão IAB). */
+  /**
+   * Quantos ms o anúncio precisa ficar "montado" antes da impressão contar.
+   * Default: **1000ms para imagem, 2000ms para vídeo** (alinha com IAB MRC).
+   * Passa explicitamente para override.
+   */
   impressionDelayMs?: number;
 };
 
-/**
- * Componente auto-tracking. Faz tudo: carrega, renderiza, marca impressão
- * passado `impressionDelayMs` (default 1s — assumindo visibilidade gerida pelo
- * componente pai, ex: dentro de uma FlatList com viewability config) e marca
- * clique no `onPress`.
- *
- * Para tracking de visibility real (rolagem dentro de FlatList), usa o
- * `viewabilityConfig` da FlatList + chama `markImpression()` no callback —
- * neste caso usa `useAd` directo em vez de `<AdView>`.
- */
 export function AdView(props: AdViewProps) {
   const {
     style,
@@ -46,7 +50,7 @@ export function AdView(props: AdViewProps) {
     renderAd,
     renderEmpty,
     renderLoading,
-    impressionDelayMs = 1000,
+    impressionDelayMs,
     ...req
   } = props;
 
@@ -61,17 +65,21 @@ export function AdView(props: AdViewProps) {
     }
   };
 
+  const asset = anuncio?.assets?.[0];
+  const effectiveDelay =
+    impressionDelayMs ?? (asset?.tipo === 'video' ? 2000 : 1000);
+
   useEffect(() => {
     if (!anuncio || !mounted) return;
     timerRef.current = setTimeout(() => {
       markImpression();
-    }, impressionDelayMs);
+    }, effectiveDelay);
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
     };
-  }, [anuncio?.id, mounted, impressionDelayMs, markImpression]);
+  }, [anuncio?.id, mounted, effectiveDelay, markImpression]);
 
   if (loading) {
     if (renderLoading) {
@@ -99,22 +107,120 @@ export function AdView(props: AdViewProps) {
     );
   }
 
-  const asset = anuncio.assets?.[0];
+  return (
+    <Pressable
+      onPress={markClick}
+      onLayout={handleLayout}
+      style={[styles.container, style]}
+    >
+      {renderAsset(asset, mediaStyle, anuncio.nome)}
+    </Pressable>
+  );
+}
+
+function renderAsset(
+  asset: AdAsset | undefined,
+  mediaStyle: StyleProp<ViewStyle> | undefined,
+  fallbackName: string,
+): React.ReactNode {
+  if (!asset) {
+    return (
+      <View style={[styles.fallback, mediaStyle as object]}>
+        <Text style={styles.fallbackText}>{fallbackName}</Text>
+      </View>
+    );
+  }
+
+  if (asset.tipo === 'imagem' && asset.url) {
+    return (
+      <Image
+        source={{ uri: asset.url }}
+        style={[styles.media, mediaStyle as object]}
+        resizeMode="cover"
+      />
+    );
+  }
+
+  if (asset.tipo === 'video') {
+    return <VideoAsset asset={asset} mediaStyle={mediaStyle} />;
+  }
+
+  // Texto ou desconhecido — fallback simples.
+  return (
+    <View style={[styles.fallback, mediaStyle as object]}>
+      <Text style={styles.fallbackText}>{fallbackName}</Text>
+    </View>
+  );
+}
+
+function VideoAsset({
+  asset,
+  mediaStyle,
+}: {
+  asset: AdAsset;
+  mediaStyle: StyleProp<ViewStyle> | undefined;
+}) {
+  const sourceUrl = asset.hls_url || asset.url;
+  const poster = asset.thumbnail_url;
+
+  // Se expo-video não está disponível, renderiza thumbnail como fallback.
+  if (!lazyVideoView || !lazyUseVideoPlayer) {
+    return (
+      <Image
+        source={{ uri: poster || sourceUrl || undefined }}
+        style={[styles.media, mediaStyle as object]}
+        resizeMode="cover"
+      />
+    );
+  }
 
   return (
-    <Pressable onPress={markClick} onLayout={handleLayout} style={[styles.container, style]}>
-      {asset?.tipo === 'imagem' && asset.url ? (
-        <Image
-          source={{ uri: asset.url }}
-          style={[styles.media, mediaStyle as object]}
-          resizeMode="cover"
-        />
-      ) : (
-        <View style={[styles.fallback, mediaStyle as object]}>
-          <Text style={styles.fallbackText}>{anuncio.nome}</Text>
-        </View>
-      )}
-    </Pressable>
+    <ExpoVideoInner
+      sourceUrl={sourceUrl ?? null}
+      poster={poster ?? null}
+      mediaStyle={mediaStyle}
+    />
+  );
+}
+
+// Wrapper interno para o expo-video — só renderiza se o módulo está disponível.
+function ExpoVideoInner({
+  sourceUrl,
+  poster,
+  mediaStyle,
+}: {
+  sourceUrl: string | null;
+  poster: string | null;
+  mediaStyle: StyleProp<ViewStyle> | undefined;
+}) {
+  const VideoView = lazyVideoView;
+  const useVideoPlayer = lazyUseVideoPlayer;
+
+  const player = useVideoPlayer(sourceUrl ?? '', (p: any) => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
+
+  if (!sourceUrl) {
+    return (
+      <Image
+        source={{ uri: poster || undefined }}
+        style={[styles.media, mediaStyle as object]}
+        resizeMode="cover"
+      />
+    );
+  }
+
+  return (
+    <VideoView
+      style={[styles.media, mediaStyle as object]}
+      player={player}
+      contentFit="cover"
+      nativeControls={false}
+      allowsFullscreen={false}
+      allowsPictureInPicture={false}
+    />
   );
 }
 

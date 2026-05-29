@@ -3,10 +3,29 @@
  * Espelham a forma de resposta da API v2 da HongaYetu.
  */
 
+export type AdAssetStatus = 'pronto' | 'processando' | 'erro';
+
+export type AdAssetQuality = {
+  resolucao: string;
+  bitrate: number;
+  url: string;
+};
+
 export type AdAsset = {
   id: number;
   tipo: 'imagem' | 'video' | 'texto';
+  status?: AdAssetStatus | null;
+  /**
+   * - imagem: URL da imagem.
+   * - video: URL do MP4 original (fallback se `hls_url` for null).
+   */
   url: string | null;
+  /** Manifest HLS (m3u8). Só presente quando `tipo === 'video'` e processado. */
+  hls_url?: string | null;
+  /** Thumbnail/poster do vídeo. */
+  thumbnail_url?: string | null;
+  /** Qualidades disponíveis — HLS já adapta, este campo é para selectors manuais. */
+  qualities?: AdAssetQuality[] | null;
 };
 
 export type Anuncio = {
