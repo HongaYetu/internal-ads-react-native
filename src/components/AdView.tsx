@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -10,6 +11,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { useAdsContext } from '../context/AdsProvider';
 import { useAd } from '../hooks/useAd';
 import type { AdAsset, AdServeRequest, Anuncio } from '../types';
 
@@ -54,7 +56,8 @@ export function AdView(props: AdViewProps) {
     ...req
   } = props;
 
-  const { anuncio, loading, markImpression, markClick } = useAd(req);
+  const { anuncio, tokens, loading, markImpression, markClick } = useAd(req);
+  const { baseUrl, mode } = useAdsContext();
   const [mounted, setMounted] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -81,6 +84,30 @@ export function AdView(props: AdViewProps) {
     };
   }, [anuncio?.id, mounted, effectiveDelay, markImpression]);
 
+  // Em modo proxy, o click vai por GET nativo: o `Pressable` abre o URL do
+  // proxy via `Linking.openURL`. O proxy regista server-side e devolve 302
+  // para o destino. Mais robusto contra falhas de rede de POST + redirect.
+  const useProxyClick = mode === 'proxy' && !!tokens?.click;
+  const proxyClickUrl = useMemo(() => {
+    if (!useProxyClick) return null;
+    return `${baseUrl.replace(/\/+$/, '')}/click/${encodeURIComponent(tokens!.click)}`;
+  }, [useProxyClick, baseUrl, tokens?.click]);
+
+  const handlePress = async () => {
+    if (proxyClickUrl) {
+      try {
+        const canOpen = await Linking.canOpenURL(proxyClickUrl).catch(() => false);
+        if (canOpen) {
+          await Linking.openURL(proxyClickUrl);
+          return;
+        }
+      } catch {
+        // cai para fallback
+      }
+    }
+    await markClick();
+  };
+
   if (loading) {
     if (renderLoading) {
       return <>{renderLoading()}</>;
@@ -101,7 +128,7 @@ export function AdView(props: AdViewProps) {
 
   if (renderAd) {
     return (
-      <Pressable onPress={markClick} onLayout={handleLayout} style={style}>
+      <Pressable onPress={handlePress} onLayout={handleLayout} style={style}>
         {renderAd(anuncio)}
       </Pressable>
     );
@@ -109,11 +136,16 @@ export function AdView(props: AdViewProps) {
 
   return (
     <Pressable
-      onPress={markClick}
+      onPress={handlePress}
       onLayout={handleLayout}
       style={[styles.container, style]}
     >
-      {renderAsset(asset, mediaStyle, anuncio.nome)}
+      <View style={styles.assetWrap}>
+        {renderAsset(asset, mediaStyle, anuncio.nome)}
+        <View style={styles.adLabelWrap} pointerEvents="none">
+          <Text style={styles.adLabelText}>Anúncio.</Text>
+        </View>
+      </View>
     </Pressable>
   );
 }
@@ -131,21 +163,30 @@ function renderAsset(
     );
   }
 
+  // Aspect ratio do asset (versão ou original). Quando indisponível, 16:9.
+  const aspectRatio =
+    asset.largura && asset.altura ? asset.largura / asset.altura : 16 / 9;
+  const sizingStyle: ViewStyle = {
+    width: '100%',
+    aspectRatio,
+    ...(asset.largura ? { maxWidth: asset.largura } : null),
+    ...(asset.altura ? { maxHeight: asset.altura } : null),
+  };
+
   if (asset.tipo === 'imagem' && asset.url) {
     return (
       <Image
         source={{ uri: asset.url }}
-        style={[styles.media, mediaStyle as object]}
-        resizeMode="cover"
+        style={[sizingStyle, mediaStyle as object]}
+        resizeMode="contain"
       />
     );
   }
 
   if (asset.tipo === 'video') {
-    return <VideoAsset asset={asset} mediaStyle={mediaStyle} />;
+    return <VideoAsset asset={asset} sizingStyle={sizingStyle} mediaStyle={mediaStyle} />;
   }
 
-  // Texto ou desconhecido — fallback simples.
   return (
     <View style={[styles.fallback, mediaStyle as object]}>
       <Text style={styles.fallbackText}>{fallbackName}</Text>
@@ -155,21 +196,22 @@ function renderAsset(
 
 function VideoAsset({
   asset,
+  sizingStyle,
   mediaStyle,
 }: {
   asset: AdAsset;
+  sizingStyle: ViewStyle;
   mediaStyle: StyleProp<ViewStyle> | undefined;
 }) {
   const sourceUrl = asset.hls_url || asset.url;
   const poster = asset.thumbnail_url;
 
-  // Se expo-video não está disponível, renderiza thumbnail como fallback.
   if (!lazyVideoView || !lazyUseVideoPlayer) {
     return (
       <Image
         source={{ uri: poster || sourceUrl || undefined }}
-        style={[styles.media, mediaStyle as object]}
-        resizeMode="cover"
+        style={[sizingStyle, mediaStyle as object]}
+        resizeMode="contain"
       />
     );
   }
@@ -178,19 +220,21 @@ function VideoAsset({
     <ExpoVideoInner
       sourceUrl={sourceUrl ?? null}
       poster={poster ?? null}
+      sizingStyle={sizingStyle}
       mediaStyle={mediaStyle}
     />
   );
 }
 
-// Wrapper interno para o expo-video — só renderiza se o módulo está disponível.
 function ExpoVideoInner({
   sourceUrl,
   poster,
+  sizingStyle,
   mediaStyle,
 }: {
   sourceUrl: string | null;
   poster: string | null;
+  sizingStyle: ViewStyle;
   mediaStyle: StyleProp<ViewStyle> | undefined;
 }) {
   const VideoView = lazyVideoView;
@@ -206,17 +250,17 @@ function ExpoVideoInner({
     return (
       <Image
         source={{ uri: poster || undefined }}
-        style={[styles.media, mediaStyle as object]}
-        resizeMode="cover"
+        style={[sizingStyle, mediaStyle as object]}
+        resizeMode="contain"
       />
     );
   }
 
   return (
     <VideoView
-      style={[styles.media, mediaStyle as object]}
+      style={[sizingStyle, mediaStyle as object]}
       player={player}
-      contentFit="cover"
+      contentFit="contain"
       nativeControls={false}
       allowsFullscreen={false}
       allowsPictureInPicture={false}
@@ -227,10 +271,28 @@ function ExpoVideoInner({
 const styles = StyleSheet.create({
   container: {
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  media: {
-    width: '100%',
-    aspectRatio: 16 / 9,
+  assetWrap: {
+    position: 'relative',
+    alignSelf: 'center',
+  },
+  adLabelWrap: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 3,
+    zIndex: 2,
+  },
+  adLabelText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   fallback: {
     padding: 16,

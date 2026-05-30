@@ -1,6 +1,6 @@
 {
   "name": "@hongayetu/internal-ads-react-native",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "SDK React Native para servir e tracking de anúncios da plataforma HongaYetu (consumidor da API v2).",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",

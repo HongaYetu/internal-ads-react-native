@@ -26,8 +26,7 @@ export type UseAdState = {
  * só se quiseres construir uma UI custom.
  *
  * O `useAd` **não** marca impressão automaticamente — chamas `markImpression()`
- * quando o anúncio fica visível ≥1s (ex: dentro de um IntersectionObserver
- * equivalente em RN: `onLayout` + `measure`).
+ * quando o anúncio fica visível ≥1s (ex: dentro de um `onLayout` + `measure`).
  */
 export function useAd(req: AdServeRequest): UseAdState {
   const { baseUrl, token, deviceId, debug } = useAdsContext();
@@ -38,12 +37,16 @@ export function useAd(req: AdServeRequest): UseAdState {
   const impressionMarked = useRef(false);
 
   // Stabilize key deps to avoid loops.
-  const espacoId = req.espacoId;
+  const espacoSlug = req.espacoSlug;
   const formatoId = req.formatoId ?? null;
-  const origem = req.origem ?? null;
   const sublocal = req.sublocal ?? null;
   const userAge = req.userAge ?? null;
   const geoCountry = req.geoCountry ?? null;
+  const slotWidth = req.slotWidth ?? null;
+  const slotHeight = req.slotHeight ?? null;
+  // Serialização estável para dep — comparar arrays por referência quebraria
+  // a memoização do `fetchAd` a cada render do consumer.
+  const formatosKey = req.formatos ? JSON.stringify(req.formatos) : '';
 
   const fetchAd = useCallback(async () => {
     if (!deviceId) return; // espera deviceId resolver
@@ -53,7 +56,18 @@ export function useAd(req: AdServeRequest): UseAdState {
     try {
       const data = await api.serve(
         { baseUrl, token, deviceId },
-        { espacoId, formatoId, origem, sublocal, userAge, geoCountry },
+        {
+          espacoSlug,
+          formatoId,
+          sublocal,
+          userAge,
+          geoCountry,
+          slotWidth,
+          slotHeight,
+          formatos: formatosKey
+            ? (JSON.parse(formatosKey) as { largura: number; altura: number }[])
+            : null,
+        },
       );
       if (!data) {
         setAnuncio(null);
@@ -76,12 +90,14 @@ export function useAd(req: AdServeRequest): UseAdState {
     baseUrl,
     token,
     deviceId,
-    espacoId,
+    espacoSlug,
     formatoId,
-    origem,
     sublocal,
     userAge,
     geoCountry,
+    slotWidth,
+    slotHeight,
+    formatosKey,
     debug,
   ]);
 

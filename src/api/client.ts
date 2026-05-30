@@ -45,13 +45,15 @@ export async function serve(
   req: AdServeRequest,
 ): Promise<AdServeResponse | null> {
   const data = await post<AdServeResponse | null>(ctx, '/serve', {
-    espaco_id: req.espacoId,
+    espaco_slug: req.espacoSlug,
     formato_id: req.formatoId ?? null,
-    origem: req.origem ?? null,
     sublocal: req.sublocal ?? null,
     device_id: ctx.deviceId,
     user_age: req.userAge ?? null,
     geo_country: req.geoCountry ?? null,
+    slot_width: req.slotWidth ?? null,
+    slot_height: req.slotHeight ?? null,
+    formatos_aceites: req.formatos ?? null,
   });
   return data;
 }

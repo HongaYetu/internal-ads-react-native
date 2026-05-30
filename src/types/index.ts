@@ -26,6 +26,18 @@ export type AdAsset = {
   thumbnail_url?: string | null;
   /** Qualidades disponíveis — HLS já adapta, este campo é para selectors manuais. */
   qualities?: AdAssetQuality[] | null;
+  /** Dimensões finais do asset escolhido (versão ou original). */
+  largura?: number | null;
+  altura?: number | null;
+  /** `versao` quando há AnuncioAssetVersao aprovada; `original` em fallback. */
+  fonte?: 'versao' | 'original' | null;
+  /** Formato matching escolhido pela central (para debug/telemetria). */
+  formato_id?: number | null;
+  formato_slug?: string | null;
+  /** Textos estruturados (anúncios nativos). Populado pela IA / criação manual. */
+  texto_titulo?: string | null;
+  texto_descricao?: string | null;
+  texto_cta?: string | null;
 };
 
 export type Anuncio = {
@@ -35,6 +47,36 @@ export type Anuncio = {
   cpm: number;
   cpc: number;
   assets: AdAsset[];
+  /** URL pública do logo da marca (anúncios nativos). */
+  logo_url?: string | null;
+  /** Nome do anunciante para exibição (ex: "Unitel"). */
+  anunciante?: string | null;
+};
+
+/**
+ * Dados normalizados para anúncios nativos. Derivado de `Anuncio` + 1º asset
+ * via `toNativeAdData()`. O consumer renderiza estes campos dentro do card.
+ */
+export type NativeAdData = {
+  headline: string;
+  descricao: string | null;
+  cta: string;
+  imageUrl: string | null;
+  imageLargura: number | null;
+  imageAltura: number | null;
+  logoUrl: string | null;
+  anunciante: string | null;
+  url: string | null;
+};
+
+/**
+ * Helpers passados a `renderCard()` do `<AdNativeSlot>`. Em RN, o consumer
+ * aplica `onPress` num `<Pressable>` (ou recebe `clickHref` para Linking
+ * directo se preferir construir o flow manualmente).
+ */
+export type NativeAdHelpers = {
+  clickHref?: string | null;
+  onPress: () => void | Promise<void>;
 };
 
 export type AdTokens = {
@@ -43,12 +85,22 @@ export type AdTokens = {
 };
 
 export type AdServeRequest = {
-  espacoId: number;
+  /** Slug do espaço/app (ex: `humbi_shop`). Identificador estável entre ambientes. */
+  espacoSlug: string;
   formatoId?: number | null;
-  origem?: string | null;
+  /** Identificador do ecrã/local dentro do app (ex: `inicio`, `produto_show`). */
   sublocal?: string | null;
   userAge?: number | null;
   geoCountry?: string | null;
+  /** Dimensões reais do slot (px). Opcional — só usado em matching aproximado. */
+  slotWidth?: number | null;
+  slotHeight?: number | null;
+  /**
+   * Lista de tamanhos exactos aceites pelo slot. Quando definida, a API só
+   * devolve anúncios cuja versão (ou original) corresponda EXACTAMENTE a uma
+   * das entradas. Sem match → `data: null` (no-fill).
+   */
+  formatos?: Array<{ largura: number; altura: number }> | null;
 };
 
 export type AdServeResponse = {
