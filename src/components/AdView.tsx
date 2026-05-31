@@ -12,7 +12,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useAdsContext } from '../context/AdsProvider';
-import { useAd } from '../hooks/useAd';
+import { useAd, type UseAdState } from '../hooks/useAd';
 import type { AdAsset, AdServeRequest, Anuncio } from '../types';
 
 // Lazy import de expo-video — se a app não tiver instalado, fallback automático
@@ -43,6 +43,11 @@ export type AdViewProps = AdServeRequest & {
    * Passa explicitamente para override.
    */
   impressionDelayMs?: number;
+  /**
+   * Estado pré-fetchado de `useAd`. Quando fornecido, o componente NÃO
+   * dispara o seu próprio pedido — usa o estado do parent (ex: AdSlot).
+   */
+  prefetched?: UseAdState;
 };
 
 export function AdView(props: AdViewProps) {
@@ -53,10 +58,13 @@ export function AdView(props: AdViewProps) {
     renderEmpty,
     renderLoading,
     impressionDelayMs,
+    prefetched,
     ...req
   } = props;
 
-  const { anuncio, tokens, loading, markImpression, markClick } = useAd(req);
+  const ownState = useAd({ ...req, enabled: !prefetched });
+  const state = prefetched ?? ownState;
+  const { anuncio, tokens, loading, markImpression, markClick } = state;
   const { baseUrl, mode } = useAdsContext();
   const [mounted, setMounted] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

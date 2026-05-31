@@ -50,8 +50,13 @@ export function useAd(req: AdServeRequest): UseAdState {
   const slotWidth = req.slotWidth ?? null;
   const slotHeight = req.slotHeight ?? null;
   const formatosKey = req.formatos ? JSON.stringify(req.formatos) : '';
+  const enabled = req.enabled !== false;
 
   const fetchAd = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     if (!deviceId) {
       if (debug) {
         console.log('[hongayetu/ads] useAd: a aguardar deviceId', { espacoSlug, sublocal });
@@ -128,6 +133,7 @@ export function useAd(req: AdServeRequest): UseAdState {
     slotHeight,
     formatosKey,
     debug,
+    enabled,
   ]);
 
   useEffect(() => {

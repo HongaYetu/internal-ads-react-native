@@ -7,6 +7,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { AdView, type AdViewProps } from './AdView';
+import { useAd } from '../hooks/useAd';
 
 export type AdSlotProps = AdViewProps & {
   /**
@@ -96,9 +97,38 @@ export function AdSlot(props: AdSlotProps) {
   }
 
   return (
+    <AdSlotVisible
+      adProps={adProps}
+      intrinsicStyle={intrinsicStyle}
+      containerStyle={containerStyle}
+      skeletonColor={skeletonColor}
+    />
+  );
+}
+
+function AdSlotVisible({
+  adProps,
+  intrinsicStyle,
+  containerStyle,
+  skeletonColor,
+}: {
+  adProps: AdViewProps;
+  intrinsicStyle: ViewStyle;
+  containerStyle?: StyleProp<ViewStyle>;
+  skeletonColor: string;
+}) {
+  const state = useAd(adProps);
+
+  // Erro OU no-fill → colapsa o wrapper. Sem espaço em branco.
+  if (!state.loading && !state.anuncio) {
+    return null;
+  }
+
+  return (
     <View style={[intrinsicStyle, containerStyle]}>
       <AdView
         {...adProps}
+        prefetched={state}
         style={{ width: '100%', height: '100%' }}
         renderLoading={() => (
           <View

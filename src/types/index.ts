@@ -105,6 +105,8 @@ export type AdServeRequest = {
    * das entradas. Sem match → `data: null` (no-fill).
    */
   formatos?: Array<{ largura: number; altura: number }> | null;
+  /** Quando `false`, `useAd` não dispara `/serve`. Default: true. */
+  enabled?: boolean;
 };
 
 /** Eventos de progresso de vídeo emitidos pelo `<AdInterstitial>` ao backend. */
