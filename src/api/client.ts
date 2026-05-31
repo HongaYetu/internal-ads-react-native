@@ -1,4 +1,4 @@
-import type { AdServeRequest, AdServeResponse } from '../types';
+import type { AdServeRequest, AdServeResponse, VideoEvent } from '../types';
 
 /**
  * Cliente HTTP fino para a API v2 de anúncios. Não é uma classe — funções
@@ -20,17 +20,29 @@ class AdsApiError extends Error {
 }
 
 async function post<T>(ctx: ClientCtx, path: string, body: Record<string, unknown>): Promise<T> {
-  const res = await fetch(`${ctx.baseUrl}${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${ctx.token}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const url = `${ctx.baseUrl}${path}`;
+  // eslint-disable-next-line no-console
+  console.log('[hongayetu/ads] api.post →', { url, body });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${ctx.token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[hongayetu/ads] api.post: fetch falhou', { url, erro: String(e) });
+    throw new AdsApiError(`Network: ${String(e)}`, 0);
+  }
 
   const data = await res.json().catch(() => ({}));
+  // eslint-disable-next-line no-console
+  console.log('[hongayetu/ads] api.post ←', { url, status: res.status, estado: data?.estado, data });
   if (!res.ok || data?.estado === 'erro') {
     throw new AdsApiError(
       data?.texto || `HTTP ${res.status}`,
@@ -72,6 +84,20 @@ export async function trackClick(
   return post<{ redirect_url: string | null }>(ctx, '/click', {
     token,
     device_id: ctx.deviceId,
+  });
+}
+
+export async function trackVideoEvent(
+  ctx: ClientCtx,
+  token: string,
+  event: VideoEvent,
+  positionMs?: number,
+): Promise<void> {
+  await post(ctx, '/video-event', {
+    token,
+    event,
+    device_id: ctx.deviceId,
+    position_ms: positionMs ?? null,
   });
 }
 

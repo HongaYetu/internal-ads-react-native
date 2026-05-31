@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getAdsStorage } from '../utils/mmkvStore';
 
 const STORAGE_KEY = '@hongayetu/internal-ads/device_id';
 
@@ -10,31 +11,8 @@ function uuidv4(): string {
   });
 }
 
-type AsyncStorageLike = {
-  getItem: (k: string) => Promise<string | null>;
-  setItem: (k: string, v: string) => Promise<void>;
-};
-
-let cachedStorage: AsyncStorageLike | null = null;
-function getStorage(): AsyncStorageLike | null {
-  if (cachedStorage !== null) {
-    return cachedStorage;
-  }
-  try {
-    // Lazy import — AsyncStorage é peerDep opcional; se a app não tiver
-    // instalado, o SDK degrada para device_id por sessão (não persistido).
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('@react-native-async-storage/async-storage');
-    cachedStorage = (mod.default ?? mod) as AsyncStorageLike;
-  } catch {
-    cachedStorage = null;
-  }
-  return cachedStorage;
-}
-
 /**
- * Devolve um `device_id` estável por dispositivo, persistido em AsyncStorage
- * (ou só em memória se a app não tiver AsyncStorage instalado).
+ * Devolve um `device_id` estável por dispositivo, persistido em MMKV.
  *
  * Permite override via prop — útil para testes ou quando a app já tem o seu
  * próprio ID anonimizado.
@@ -47,34 +25,22 @@ export function useDeviceId(override?: string | null): string | null {
       setId(override);
       return;
     }
-    let cancelado = false;
-    (async () => {
-      const storage = getStorage();
-      if (!storage) {
-        // Fallback: usa um UUID de sessão (perde-se no reload).
-        if (!cancelado) {
-          setId((prev) => prev ?? uuidv4());
-        }
-        return;
+    try {
+      const storage = getAdsStorage();
+      let stored = storage.getString(STORAGE_KEY);
+      const novo = !stored;
+      if (!stored) {
+        stored = uuidv4();
+        storage.set(STORAGE_KEY, stored);
       }
-      try {
-        let stored = await storage.getItem(STORAGE_KEY);
-        if (!stored) {
-          stored = uuidv4();
-          await storage.setItem(STORAGE_KEY, stored);
-        }
-        if (!cancelado) {
-          setId(stored);
-        }
-      } catch {
-        if (!cancelado) {
-          setId(uuidv4());
-        }
-      }
-    })();
-    return () => {
-      cancelado = true;
-    };
+      // eslint-disable-next-line no-console
+      console.log('[hongayetu/ads] useDeviceId:', { deviceId: stored, novo });
+      setId(stored);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[hongayetu/ads] useDeviceId: MMKV falhou, fallback UUID em memória', { erro: String(e) });
+      setId(uuidv4());
+    }
   }, [override]);
 
   return id;

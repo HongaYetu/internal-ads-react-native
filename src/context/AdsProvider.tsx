@@ -39,6 +39,16 @@ export function AdsProvider({ config, children }: AdsProviderProps) {
     [config.baseUrl, config.token, config.mode, config.debug, deviceId],
   );
 
+  if (value.debug) {
+    // eslint-disable-next-line no-console
+    console.log('[hongayetu/ads] AdsProvider', {
+      baseUrl: value.baseUrl,
+      mode: value.mode,
+      temToken: !!value.token,
+      deviceId: value.deviceId,
+    });
+  }
+
   if (value.debug && value.mode === 'direct') {
     // eslint-disable-next-line no-console
     console.warn(

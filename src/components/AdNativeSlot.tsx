@@ -27,6 +27,13 @@ export type AdNativeSlotProps = AdServeRequest & {
   containerStyle?: StyleProp<ViewStyle>;
   /** Default 1000ms (IAB MRC). */
   impressionDelayMs?: number;
+  /**
+   * Disparado quando o `/serve` termina sem anúncio elegível (no-fill).
+   * Útil para o consumer remover dinamicamente a célula da grelha em vez de
+   * mostrar espaço em branco quando o slot está dentro de um wrapper com
+   * dimensão fixa.
+   */
+  onNoFill?: () => void;
 };
 
 /**
@@ -44,10 +51,24 @@ export function AdNativeSlot(props: AdNativeSlotProps) {
     lazy = true,
     containerStyle,
     impressionDelayMs,
+    onNoFill,
     ...req
   } = props;
 
   const [visible, setVisible] = useState(!lazy);
+
+  // Quando o consumer passa `formatos`, reservamos espaço com aspect-ratio do
+  // primeiro formato para o `onLayout` poder reportar dimensões > 0 e fazer
+  // o lazy mount disparar. Sem isto o slot ficaria preso em loading state
+  // dentro de containers sem altura intrínseca.
+  const primario = (req as AdServeRequest).formatos?.[0] ?? null;
+  const intrinsicStyle = primario
+    ? {
+        width: '100%' as const,
+        maxWidth: primario.largura,
+        aspectRatio: primario.largura / primario.altura,
+      }
+    : null;
 
   const handleLayout = (e: LayoutChangeEvent) => {
     if (visible) return;
@@ -56,7 +77,7 @@ export function AdNativeSlot(props: AdNativeSlotProps) {
   };
 
   if (!visible) {
-    return <View onLayout={handleLayout} style={containerStyle} />;
+    return <View onLayout={handleLayout} style={[intrinsicStyle, containerStyle]} />;
   }
 
   return (
@@ -65,6 +86,7 @@ export function AdNativeSlot(props: AdNativeSlotProps) {
       renderCard={renderCard}
       containerStyle={containerStyle}
       impressionDelayMs={impressionDelayMs}
+      onNoFill={onNoFill}
     />
   );
 }
@@ -74,16 +96,27 @@ function NativeAdInner({
   renderCard,
   containerStyle,
   impressionDelayMs,
+  onNoFill,
 }: {
   req: AdServeRequest;
   renderCard: (data: NativeAdData, helpers: NativeAdHelpers) => React.ReactNode;
   containerStyle?: StyleProp<ViewStyle>;
   impressionDelayMs?: number;
+  onNoFill?: () => void;
 }) {
-  const { anuncio, tokens, markImpression, markClick } = useAd(req);
+  const { anuncio, tokens, loading, markImpression, markClick } = useAd(req);
   const { baseUrl, mode } = useAdsContext();
   const [mounted, setMounted] = useState(false);
   const impressionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noFillFiredRef = useRef(false);
+
+  useEffect(() => {
+    if (loading || noFillFiredRef.current) return;
+    if (!anuncio && onNoFill) {
+      noFillFiredRef.current = true;
+      onNoFill();
+    }
+  }, [loading, anuncio, onNoFill]);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     if (mounted) return;

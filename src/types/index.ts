@@ -38,6 +38,10 @@ export type AdAsset = {
   texto_titulo?: string | null;
   texto_descricao?: string | null;
   texto_cta?: string | null;
+  /** Duração do vídeo (apenas quando `tipo='video'`). */
+  duracao_segundos?: number | null;
+  /** MP4 direto (apenas vídeo). Usar como fallback quando `hls_url` indisponível. */
+  mp4_url?: string | null;
 };
 
 export type Anuncio = {
@@ -103,10 +107,38 @@ export type AdServeRequest = {
   formatos?: Array<{ largura: number; altura: number }> | null;
 };
 
+/** Eventos de progresso de vídeo emitidos pelo `<AdInterstitial>` ao backend. */
+export type VideoEvent =
+  | 'start'
+  | 'quartil_25'
+  | 'quartil_50'
+  | 'quartil_75'
+  | 'complete'
+  | 'skip'
+  | 'close';
+
+/**
+ * Política de slot (skip/cap/min_view). Só presente quando o sublocal/espaço
+ * tem configuração explícita. O `<AdInterstitial>` aplica; o `<AdSlot>` ignora.
+ */
+export type PoliticaInterstitial = {
+  skip_after_ms: number;
+  frequency_cap_dia: number;
+  interstitial_min_view_ms: number;
+  /**
+   * Cooldown mínimo (segundos) entre duas exibições do mesmo sublocal para o
+   * mesmo utilizador. Default 0 (sem cooldown). Protege contra spam quando o
+   * user reabre o app várias vezes em sucessão.
+   */
+  intervalo_minimo_segundos: number;
+  fonte: 'sublocal' | 'espaco';
+};
+
 export type AdServeResponse = {
   anuncio: Anuncio;
   tokens: AdTokens;
   ttl: number;
+  politica?: PoliticaInterstitial;
 };
 
 export type AdsMode = 'direct' | 'proxy';
